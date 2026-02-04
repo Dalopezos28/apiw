@@ -1,8 +1,11 @@
+import os
 import requests
+from dotenv import load_dotenv # Necesitarás: pip install python-dotenv
 
-# Configuración de tus credenciales (Cópialas de tu panel de Meta)
-TOKEN = "EAAUANJTEhCQBQktzGnxlKznORV1oyr3386iMFR9UjHXYA3zrh3FN9beLXLPfZB36j1qTPaw5CUWbyQxCmZAFSuvMU427xXSmyr5VB4k3jZBWi1vnueL2UXiTBrLhV5ZAnqsxW2Mkin7HXejV0dZAYjDvZCO9JOoxhwscjAa3BWm8rq36XjSSEOStx9iWleXWwwZCqyGf5owezpKVoQ7qcKkThLMMyVTuNcRWxKOaWj5on4nANMDi1h2D2EoPwOBAr1ZBRFCuitFBgSoGluMMDJMZBnAZDZD"
-PHONE_NUMBER_ID = "990436387484180"  # Tomado de tu captura
+load_dotenv() # Carga el archivo .env donde guardes tu TOKEN localmente
+
+TOKEN = os.getenv("WHATSAPP_TOKEN")
+PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 
 def enviar_mensaje_prueba(destinatario):
     url = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
