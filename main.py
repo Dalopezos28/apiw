@@ -112,3 +112,11 @@ def home():
 async def probar_reporte():
     await enviar_reporte_whatsapp()
     return {"status": "Intento de envío ejecutado. Revisa los logs de Railway."}
+@app.get("/debug-hoja")
+def debug_hoja():
+    try:
+        # Intenta obtener solo el nombre del último registro
+        reporte = obtener_ultimo_registro_incapacidad()
+        return {"conexion_google": "Exitosa", "ultimo_dato": reporte}
+    except Exception as e:
+        return {"conexion_google": "Fallida", "error": str(e)}
