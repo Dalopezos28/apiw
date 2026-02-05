@@ -23,41 +23,33 @@ def obtener_ultimo_registro_incapacidad():
         creds = Credentials.from_service_account_info(creds_json, scopes=scope)
         client = gspread.authorize(creds)
         
-        # Accedemos específicamente a la pestaña "BD Incapacidades"
         sheet = client.open_by_key(SHEET_ID).worksheet("BD Incapacidades")
-        
-        # Obtenemos todos los registros para encontrar el último
         registros = sheet.get_all_values()
         
         if len(registros) <= 1:
-            return "No hay registros disponibles en la base de datos."
+            return "No hay registros disponibles."
 
-        # Tomamos la última fila
         ultima_fila = registros[-1]
         hoy = datetime.now()
 
-        try:
-            nombre = ultima_fila[0] if ultima_fila[0] else "Sin Nombre"
-            fecha_fin_str = ultima_fila[10] # Columna K
-            
-            if not fecha_fin_str:
-                return f"El último registro ({nombre}) no tiene fecha de fin."
-            
-            fecha_fin = datetime.strptime(fecha_fin_str, "%d/%m/%Y")
-            diferencia = (fecha_fin - hoy).days + 1
-            
-            if diferencia >= 0:
-                return f"• {nombre}: faltan {diferencia} días."
-            else:
-                return f"• {nombre}: incapacidad vencida hace {abs(diferencia)} días."
+        nombre = ultima_fila[0] if ultima_fila[0] else "Sin Nombre"
+        fecha_fin_str = ultima_fila[10] # Columna K
+        
+        if not fecha_fin_str:
+            return f"El registro de {nombre} no tiene fecha de fin."
+        
+        fecha_fin = datetime.strptime(fecha_fin_str, "%d/%m/%Y")
+        diferencia = (fecha_fin - hoy).days + 1
+        
+        if diferencia >= 0:
+            return f"• {nombre}: faltan {diferencia} días."
+        else:
+            return f"• {nombre}: vencida hace {abs(diferencia)} días."
                 
-        except Exception as e:
-            return f"Error procesando los datos de la última fila: {e}"
-    
     except Exception as e:
-        return f"Error conectando con la pestaña BD Incapacidades: {e}"
+        return f"Error: {e}"
 
-async def enviar_reporte_whatsapp():
+async def enviar_reporte_whatsapp(usar_plantilla=True):
     reporte = obtener_ultimo_registro_incapacidad()
     url = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
     
@@ -66,62 +58,54 @@ async def enviar_reporte_whatsapp():
         "Content-Type": "application/json"
     }
     
-    # Usando la plantilla sencilla que definimos
-    data = {
-        "messaging_product": "whatsapp",
-        "to": DESTINATARIO,
-        "type": "template",
-        "template": {
-            "name": "reporte_incapacidad_diario",
-            "language": { "code": "es" },
-            "components": [
-                {
-                    "type": "body",
-                    "parameters": [
-                        { "type": "text", "text": reporte }
-                    ]
-                }
-            ]
+    if usar_plantilla:
+        # Prueba con plantilla pre-aprobada por Meta
+        data = {
+            "messaging_product": "whatsapp",
+            "to": DESTINATARIO,
+            "type": "template",
+            "template": {
+                "name": "hello_world",
+                "language": { "code": "en_US" }
+            }
         }
-    }
+    else:
+        # Envío de texto plano (Solo funciona si tú le escribiste al bot en las últimas 24h)
+        data = {
+            "messaging_product": "whatsapp",
+            "to": DESTINATARIO,
+            "type": "text",
+            "text": {"body": f"📋 Reporte CHVS:\n{reporte}"}
+        }
     
     async with httpx.AsyncClient() as client:
         res = await client.post(url, headers=headers, json=data)
-        print(f"Envío de reporte (Último registro): {res.status_code}")
+        print(f"Envío manual (Plantilla={usar_plantilla}): {res.status_code} - {res.text}")
 
 # --- PROGRAMADOR ---
 scheduler = BackgroundScheduler()
+# Este se mantiene para las 9 AM con la zona horaria de Colombia
 scheduler.add_job(enviar_reporte_whatsapp, 'cron', hour=9, minute=0, timezone='America/Bogota')
 scheduler.start()
 
 # --- RUTAS ---
+@app.get("/")
+def home():
+    return {"status": "Bot CHVS Online", "pestaña": "BD Incapacidades"}
+
+@app.get("/test-ahora")
+async def disparar_prueba_manual():
+    # Primero intentamos con la plantilla Hello World para validar el Token
+    print("Iniciando prueba de conexión con Meta...")
+    await enviar_reporte_whatsapp(usar_plantilla=True)
+    return {"status": "Prueba enviada", "nota": "Si te llega 'Hello World', el token y el ID son correctos."}
+
+@app.get("/debug-datos")
+def debug_datos():
+    return {"ultimo_registro": obtener_ultimo_registro_incapacidad()}
+
 @app.get("/webhook")
 async def validar_webhook(token: str = Query(alias="hub.verify_token"), challenge: str = Query(alias="hub.challenge")):
     if token == VERIFY_TOKEN:
         return Response(content=challenge, media_type="text/plain")
     return Response(content="Error", status_code=403)
-
-@app.post("/webhook")
-async def recibir_mensaje(request: Request):
-    return {"status": "recibido"}
-
-@app.get("/")
-def home():
-    return {"status": "Bot CHVS Online", "pestaña": "BD Incapacidades"}
-@app.get("/probar-reporte")
-async def probar_reporte():
-    await enviar_reporte_whatsapp()
-    return {"status": "Intento de envío ejecutado. Revisa los logs de Railway."}
-@app.get("/debug-hoja")
-def debug_hoja():
-    try:
-        # Intenta obtener solo el nombre del último registro
-        reporte = obtener_ultimo_registro_incapacidad()
-        return {"conexion_google": "Exitosa", "ultimo_dato": reporte}
-    except Exception as e:
-        return {"conexion_google": "Fallida", "error": str(e)}
-@app.get("/test-ahora")
-async def disparar_prueba_manual():
-    print("Iniciando prueba manual de reporte...")
-    await enviar_reporte_whatsapp()
-    return {"status": "Prueba ejecutada", "detalle": "Revisa los logs de Railway para ver el resultado de Meta"}
