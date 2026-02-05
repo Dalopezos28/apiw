@@ -120,3 +120,8 @@ def debug_hoja():
         return {"conexion_google": "Exitosa", "ultimo_dato": reporte}
     except Exception as e:
         return {"conexion_google": "Fallida", "error": str(e)}
+@app.get("/test-ahora")
+async def disparar_prueba_manual():
+    print("Iniciando prueba manual de reporte...")
+    await enviar_reporte_whatsapp()
+    return {"status": "Prueba ejecutada", "detalle": "Revisa los logs de Railway para ver el resultado de Meta"}
