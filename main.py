@@ -108,3 +108,7 @@ async def recibir_mensaje(request: Request):
 @app.get("/")
 def home():
     return {"status": "Bot CHVS Online", "pestaña": "BD Incapacidades"}
+@app.get("/probar-reporte")
+async def probar_reporte():
+    await enviar_reporte_whatsapp()
+    return {"status": "Intento de envío ejecutado. Revisa los logs de Railway."}
