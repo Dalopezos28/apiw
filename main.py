@@ -203,20 +203,24 @@ async def validar_webhook(token: str = Query(alias="hub.verify_token"), challeng
 async def recibir_mensaje(request: Request):
     try:
         data = await request.json()
+        print(f"WEBHOOK payload: {json.dumps(data)}")
 
         # Extraer mensajes entrantes del payload de WhatsApp
         for entry in data.get("entry", []):
             for change in entry.get("changes", []):
                 value = change.get("value", {})
-                for msg in value.get("messages", []):
-                    if msg.get("type") == "text":
-                        texto = msg.get("text", {}).get("body", "").strip()
-                        numero_remitente = msg.get("from", "")
-                        if _es_cedula(texto):
-                            import asyncio
-                            asyncio.create_task(
-                                procesar_solicitud_certificado(numero_remitente, texto)
-                            )
+                mensajes = value.get("messages", [])
+                print(f"WEBHOOK mensajes encontrados: {len(mensajes)}")
+                for msg in mensajes:
+                    tipo = msg.get("type")
+                    texto = msg.get("text", {}).get("body", "").strip()
+                    numero_remitente = msg.get("from", "")
+                    print(f"WEBHOOK msg tipo={tipo} from={numero_remitente} texto={repr(texto)}")
+                    if tipo == "text" and _es_cedula(texto):
+                        import asyncio
+                        asyncio.create_task(
+                            procesar_solicitud_certificado(numero_remitente, texto)
+                        )
 
         return Response(content="EVENT_RECEIVED", status_code=200)
     except Exception as e:
