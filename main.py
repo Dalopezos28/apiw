@@ -16,6 +16,11 @@ VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 DESTINATARIO = os.getenv("DESTINATARIO")
 SHEET_ID = "1nmqZoDmBJZPBMaSS0vOuz7dYNlfe-jZBV5rPQ67ms9g"
 
+# Integración ERP Calidad — certificados por WhatsApp
+ERP_URL = os.getenv("ERP_URL", "").rstrip("/")     # ej: https://erp-chvs.up.railway.app
+ERP_API_KEY = os.getenv("ERP_API_KEY", "")         # igual a CALIDAD_WA_API_KEY en el ERP
+
+
 def obtener_ultimo_registro_incapacidad():
     try:
         creds_json = json.loads(os.getenv("GOOGLE_CREDS_JSON"))
@@ -87,6 +92,85 @@ async def enviar_reporte_whatsapp(usar_hello_world=False):
             except Exception as e:
                 print(f"Error en envío programado a {numero}: {e}")
 
+# --- CERTIFICADOS CALIDAD (integración ERP) ---
+
+def _es_cedula(texto: str) -> bool:
+    """Retorna True si el texto parece una cédula colombiana (6-12 dígitos)."""
+    t = texto.strip()
+    return t.isdigit() and 6 <= len(t) <= 12
+
+
+async def enviar_mensaje_texto(numero: str, mensaje: str):
+    """Envía un mensaje de texto libre por WhatsApp (sin plantilla)."""
+    url = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
+    headers = {
+        "Authorization": f"Bearer {TOKEN}",
+        "Content-Type": "application/json",
+    }
+    data = {
+        "messaging_product": "whatsapp",
+        "to": numero,
+        "type": "text",
+        "text": {"body": mensaje},
+    }
+    async with httpx.AsyncClient() as client:
+        try:
+            res = await client.post(url, headers=headers, json=data)
+            print(f"Respuesta certificado a {numero}: {res.status_code}")
+        except Exception as e:
+            print(f"Error enviando respuesta a {numero}: {e}")
+
+
+async def procesar_solicitud_certificado(numero: str, cedula: str):
+    """Llama al ERP para generar el certificado y responde al usuario por WhatsApp."""
+    if not ERP_URL or not ERP_API_KEY:
+        await enviar_mensaje_texto(
+            numero,
+            "⚠️ El servicio de certificados no está configurado. Contacta al administrador."
+        )
+        return
+
+    endpoint = f"{ERP_URL}/calidad/api/whatsapp/generar/"
+    headers = {
+        "Content-Type": "application/json",
+        "X-CALIDAD-API-KEY": ERP_API_KEY,
+    }
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            res = await client.post(endpoint, headers=headers, json={"cedula": cedula})
+        except Exception as e:
+            print(f"Error llamando al ERP para cédula {cedula}: {e}")
+            await enviar_mensaje_texto(
+                numero,
+                "❌ No se pudo conectar con el sistema. Intenta más tarde."
+            )
+            return
+
+    if res.status_code == 200:
+        datos = res.json()
+        nombre = datos.get("nombre", "")
+        numero_cert = datos.get("numero", "")
+        url_cert = datos.get("url_certificado", "")
+        mensaje = (
+            f"✅ ¡Hola {nombre}!\n\n"
+            f"Tu certificado *{numero_cert}* está listo.\n\n"
+            f"📄 Descárgalo aquí:\n{url_cert}"
+        )
+    elif res.status_code == 404:
+        mensaje = (
+            f"❌ No encontré ningún empleado con la cédula *{cedula}*.\n"
+            "Verifica el número e intenta de nuevo."
+        )
+    else:
+        mensaje = (
+            "⚠️ Ocurrió un error generando el certificado. "
+            "Contacta al área de calidad."
+        )
+
+    await enviar_mensaje_texto(numero, mensaje)
+
+
 # --- PROGRAMADOR (AsyncIOScheduler) ---
 scheduler = AsyncIOScheduler()
 
@@ -119,6 +203,22 @@ async def validar_webhook(token: str = Query(alias="hub.verify_token"), challeng
 async def recibir_mensaje(request: Request):
     try:
         data = await request.json()
+
+        # Extraer mensajes entrantes del payload de WhatsApp
+        for entry in data.get("entry", []):
+            for change in entry.get("changes", []):
+                value = change.get("value", {})
+                for msg in value.get("messages", []):
+                    if msg.get("type") == "text":
+                        texto = msg.get("text", {}).get("body", "").strip()
+                        numero_remitente = msg.get("from", "")
+                        if _es_cedula(texto):
+                            import asyncio
+                            asyncio.create_task(
+                                procesar_solicitud_certificado(numero_remitente, texto)
+                            )
+
         return Response(content="EVENT_RECEIVED", status_code=200)
     except Exception as e:
+        print(f"Error procesando webhook: {e}")
         return Response(content="ERROR", status_code=400)
