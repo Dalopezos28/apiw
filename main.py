@@ -116,7 +116,7 @@ async def enviar_mensaje_texto(numero: str, mensaje: str):
     async with httpx.AsyncClient() as client:
         try:
             res = await client.post(url, headers=headers, json=data)
-            print(f"Respuesta certificado a {numero}: {res.status_code}")
+            print(f"Respuesta certificado a {numero}: {res.status_code} | {res.text}")
         except Exception as e:
             print(f"Error enviando respuesta a {numero}: {e}")
 
