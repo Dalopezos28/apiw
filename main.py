@@ -22,7 +22,7 @@ ERP_URL = os.getenv("ERP_URL", "").rstrip("/")     # ej: https://erp-chvs.up.rai
 ERP_API_KEY = os.getenv("ERP_API_KEY", "")         # igual a CALIDAD_WA_API_KEY en el ERP
 
 # --- COMPRAS / BOLETÍN SEMANAL ---
-COMPRAS_SECRET = os.getenv("COMPRAS_SECRET", "")   # API key para autenticar llamadas desde COMPRAS
+COMPRAS_API_KEY = os.getenv("COMPRAS_API_KEY", "")  # API key para autenticar llamadas desde COMPRAS
 COMPRAS_DESTINATARIO = os.getenv("COMPRAS_DESTINATARIO", "")  # Número(s) destino, separados por coma
 
 
@@ -209,7 +209,7 @@ async def compras_notify(
     body: ComprasNotifyRequest,
     x_compras_secret: str = Header(default=""),
 ):
-    if not COMPRAS_SECRET or x_compras_secret != COMPRAS_SECRET:
+    if not COMPRAS_API_KEY or x_compras_secret != COMPRAS_API_KEY:
         raise HTTPException(status_code=403, detail="Forbidden")
     if not COMPRAS_DESTINATARIO:
         raise HTTPException(status_code=500, detail="COMPRAS_DESTINATARIO not configured")
