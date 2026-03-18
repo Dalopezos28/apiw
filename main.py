@@ -3,7 +3,8 @@ import json
 import gspread
 import httpx
 from datetime import datetime
-from fastapi import FastAPI, Request, Response, Query
+from fastapi import FastAPI, Request, Response, Query, Header, HTTPException
+from pydantic import BaseModel
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from google.oauth2.service_account import Credentials
 
@@ -19,6 +20,10 @@ SHEET_ID = "1nmqZoDmBJZPBMaSS0vOuz7dYNlfe-jZBV5rPQ67ms9g"
 # Integración ERP Calidad — certificados por WhatsApp
 ERP_URL = os.getenv("ERP_URL", "").rstrip("/")     # ej: https://erp-chvs.up.railway.app
 ERP_API_KEY = os.getenv("ERP_API_KEY", "")         # igual a CALIDAD_WA_API_KEY en el ERP
+
+# --- COMPRAS / BOLETÍN SEMANAL ---
+COMPRAS_SECRET = os.getenv("COMPRAS_SECRET", "")   # API key para autenticar llamadas desde COMPRAS
+COMPRAS_DESTINATARIO = os.getenv("COMPRAS_DESTINATARIO", "")  # Número(s) destino, separados por coma
 
 
 def obtener_ultimo_registro_incapacidad():
@@ -192,6 +197,49 @@ def home():
 async def disparar_prueba_manual():
     await enviar_reporte_whatsapp(usar_hello_world=False)
     return {"status": "Prueba manual ejecutada"}
+
+# --- COMPRAS: envío de notificaciones ---
+
+class ComprasNotifyRequest(BaseModel):
+    message: str
+
+
+@app.post("/compras/notify")
+async def compras_notify(
+    body: ComprasNotifyRequest,
+    x_compras_secret: str = Header(default=""),
+):
+    if not COMPRAS_SECRET or x_compras_secret != COMPRAS_SECRET:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if not COMPRAS_DESTINATARIO:
+        raise HTTPException(status_code=500, detail="COMPRAS_DESTINATARIO not configured")
+
+    url = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
+    headers = {
+        "Authorization": f"Bearer {TOKEN}",
+        "Content-Type": "application/json",
+    }
+    destinatarios = [n.strip() for n in COMPRAS_DESTINATARIO.split(",") if n.strip()]
+    resultados = []
+
+    async with httpx.AsyncClient() as client:
+        for numero in destinatarios:
+            data = {
+                "messaging_product": "whatsapp",
+                "to": numero,
+                "type": "text",
+                "text": {"preview_url": False, "body": body.message},
+            }
+            try:
+                res = await client.post(url, headers=headers, json=data, timeout=30)
+                resultados.append({"numero": numero, "status": res.status_code})
+                print(f"COMPRAS notify → {numero}: {res.status_code}")
+            except Exception as e:
+                resultados.append({"numero": numero, "error": str(e)})
+                print(f"COMPRAS notify error → {numero}: {e}")
+
+    return {"enviados": resultados}
+
 
 @app.get("/webhook")
 async def validar_webhook(token: str = Query(alias="hub.verify_token"), challenge: str = Query(alias="hub.challenge")):
