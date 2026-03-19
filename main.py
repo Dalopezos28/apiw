@@ -252,7 +252,7 @@ async def _send_whatsapp_template(
                             "type": "button",
                             "sub_type": "url",
                             "index": "0",
-                            "parameters": [{"type": "text", "text": f"{file_id}/view"}],
+                            "parameters": [{"type": "text", "text": f"file/d/{file_id}/view"}],
                         },
                     ],
                 },
