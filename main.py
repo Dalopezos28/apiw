@@ -234,7 +234,7 @@ async def _send_whatsapp_template(
                 "type": "template",
                 "template": {
                     "name": "cavasa_boletin_mensual",
-                    "language": {"code": "es"},
+                    "language": {"code": "es_ES"},
                     "components": [
                         {
                             "type": "header",
