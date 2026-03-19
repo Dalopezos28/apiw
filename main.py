@@ -204,6 +204,69 @@ class ComprasNotifyRequest(BaseModel):
     message: str
 
 
+class ComprasTemplateRequest(BaseModel):
+    mes: str        # ej: "Marzo 2026"
+    pdfs: str       # ej: "4"
+    registros: str  # ej: "312"
+    reemplazos: str # ej: "87"
+    file_id: str    # Drive file ID para el botón
+
+
+async def _send_whatsapp_template(
+    destinatarios: list[str],
+    mes: str,
+    pdfs: str,
+    registros: str,
+    reemplazos: str,
+    file_id: str,
+) -> list[dict]:
+    url = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
+    headers = {
+        "Authorization": f"Bearer {TOKEN}",
+        "Content-Type": "application/json",
+    }
+    resultados = []
+    async with httpx.AsyncClient() as client:
+        for numero in destinatarios:
+            data = {
+                "messaging_product": "whatsapp",
+                "to": numero,
+                "type": "template",
+                "template": {
+                    "name": "cavasa_boletin_mensual",
+                    "language": {"code": "es"},
+                    "components": [
+                        {
+                            "type": "header",
+                            "parameters": [{"type": "text", "text": mes}],
+                        },
+                        {
+                            "type": "body",
+                            "parameters": [
+                                {"type": "text", "text": pdfs},
+                                {"type": "text", "text": registros},
+                                {"type": "text", "text": reemplazos},
+                            ],
+                        },
+                        {
+                            "type": "button",
+                            "sub_type": "url",
+                            "index": "0",
+                            "parameters": [{"type": "text", "text": f"{file_id}/view"}],
+                        },
+                    ],
+                },
+            }
+            try:
+                res = await client.post(url, headers=headers, json=data, timeout=30)
+                resultados.append({"numero": numero, "status": res.status_code, "response": res.text})
+                print(f"COMPRAS template → {numero}: {res.status_code} | {res.text}")
+            except Exception as e:
+                resultados.append({"numero": numero, "error": str(e)})
+                print(f"COMPRAS template error → {numero}: {e}")
+    return resultados
+
+
 @app.post("/compras/notify")
 async def compras_notify(
     body: ComprasNotifyRequest,
@@ -239,6 +302,45 @@ async def compras_notify(
                 print(f"COMPRAS notify error → {numero}: {e}")
 
     return {"enviados": resultados}
+
+
+@app.post("/compras/notify-template")
+async def compras_notify_template(
+    body: ComprasTemplateRequest,
+    x_compras_secret: str = Header(default=""),
+):
+    if not COMPRAS_API_KEY or x_compras_secret != COMPRAS_API_KEY:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if not COMPRAS_DESTINATARIO:
+        raise HTTPException(status_code=500, detail="COMPRAS_DESTINATARIO not configured")
+
+    destinatarios = [n.strip() for n in COMPRAS_DESTINATARIO.split(",") if n.strip()]
+    resultados = await _send_whatsapp_template(
+        destinatarios, body.mes, body.pdfs, body.registros, body.reemplazos, body.file_id
+    )
+    return {"enviados": resultados}
+
+
+@app.get("/compras/notify-template/test")
+async def compras_notify_template_test(
+    x_compras_secret: str = Header(default=""),
+):
+    """Envía la plantilla con datos de prueba para verificar que funciona."""
+    if not COMPRAS_API_KEY or x_compras_secret != COMPRAS_API_KEY:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if not COMPRAS_DESTINATARIO:
+        raise HTTPException(status_code=500, detail="COMPRAS_DESTINATARIO not configured")
+
+    destinatarios = [n.strip() for n in COMPRAS_DESTINATARIO.split(",") if n.strip()]
+    resultados = await _send_whatsapp_template(
+        destinatarios,
+        mes="Marzo 2026",
+        pdfs="4",
+        registros="312",
+        reemplazos="87",
+        file_id="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms",  # placeholder Drive ID
+    )
+    return {"test": True, "enviados": resultados}
 
 
 @app.get("/webhook")
